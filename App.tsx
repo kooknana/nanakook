@@ -1,494 +1,581 @@
+import React, { useState, useCallback, useEffect } from 'react';
+import { Project, Character, Page, GeneratedImage, ExaggerationLevel, PromptType, LogEntry } from './types';
+import { analyzeStyle, generateImagesAB } from './services/imageGenerationService';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { analyzeTopic, refreshNicheStrategy } from './services/geminiService';
-import { AnalysisData, LogEntry, Strategy } from './types';
+type AppView = 'setup' | 'pages' | 'preview';
 
-// Components
-const StatCard: React.FC<{ label: string; value: string; icon?: string; accent?: boolean }> = ({ label, value, icon, accent }) => (
-  <div className="glass rounded-xl p-6 flex flex-col items-center justify-center text-center space-y-2 relative overflow-hidden group print:border-gray-200 print:shadow-none">
-    {accent && <div className="absolute top-0 left-0 w-full h-1 bg-red-500 animate-pulse-red print:hidden"></div>}
-    <div className="text-gray-400 text-xs font-medium uppercase tracking-wider print:text-gray-600">{label}</div>
-    <div className="text-2xl font-bold text-white group-hover:scale-105 transition-transform print:text-black">{value}</div>
-    {icon && <div className={`mt-2 ${accent ? 'text-red-500' : 'text-indigo-400'} print:hidden`}><i className={icon}></i></div>}
-  </div>
-);
+// 초기 프로젝트 생성
+function createEmptyProject(): Project {
+  const emptyCharacters: Character[] = Array.from({ length: 5 }, (_, i) => ({
+    id: `char-${i + 1}`,
+    name: '',
+    imageUrl: '',
+    description: '',
+    isEmpty: true,
+  }));
 
-const StrategyCard: React.FC<{ strategy: Strategy; onRefresh?: () => void; refreshing?: boolean }> = ({ strategy, onRefresh, refreshing }) => {
-  const isNiche = strategy.type === 'niche';
-  const borderColor = isNiche ? 'border-green-500/30' : 'border-red-500/30';
-  const bgColor = isNiche ? 'bg-green-500/5' : 'bg-red-500/5';
-  const tagColor = isNiche ? 'bg-green-600' : 'bg-red-600';
+  const emptyPages: Page[] = Array.from({ length: 30 }, (_, i) => ({
+    pageNumber: i + 1,
+    scenario: '',
+    selectedCharacterIds: [],
+    exaggerationLevel: 60 as ExaggerationLevel,
+    userPrompt: '',
+    generatedImages: [],
+  }));
+
+  return {
+    id: crypto.randomUUID(),
+    name: '새 동화 프로젝트',
+    characters: emptyCharacters,
+    styleProfile: null,
+    pages: emptyPages,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+}
+
+// 캐릭터 슬롯 컴포넌트
+const CharacterSlot: React.FC<{
+  character: Character;
+  onUpdate: (char: Character) => void;
+}> = ({ character, onUpdate }) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        onUpdate({
+          ...character,
+          imageUrl: event.target?.result as string,
+          isEmpty: false,
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleClear = () => {
+    onUpdate({
+      ...character,
+      name: '',
+      imageUrl: '',
+      description: '',
+      isEmpty: true,
+    });
+  };
 
   return (
-    <div className={`relative rounded-xl p-5 flex flex-col space-y-4 border ${borderColor} ${bgColor} transition-all hover:translate-y-[-4px] print:border-gray-300 print:bg-white print:text-black print:break-inside-avoid shadow-sm`}>
-      {refreshing && (
-        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm z-10 rounded-xl flex items-center justify-center">
-          <i className="fa-solid fa-spinner animate-spin text-white text-2xl"></i>
+    <div className="bg-white/5 border border-white/10 rounded-xl p-6 hover:border-purple-500/50 transition-all">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-bold text-purple-400">슬롯 {character.id.split('-')[1]}</h3>
+        {!character.isEmpty && (
+          <button
+            onClick={handleClear}
+            className="text-xs text-gray-500 hover:text-red-400 transition-colors"
+          >
+            <i className="fa-solid fa-trash mr-1"></i>
+            초기화
+          </button>
+        )}
+      </div>
+
+      {character.isEmpty ? (
+        <label className="block cursor-pointer">
+          <div className="w-full h-40 border-2 border-dashed border-white/20 rounded-lg flex flex-col items-center justify-center hover:border-purple-500/50 transition-all">
+            <i className="fa-solid fa-image text-3xl text-gray-600 mb-2"></i>
+            <span className="text-sm text-gray-500">이미지 업로드</span>
+          </div>
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageUpload}
+          />
+        </label>
+      ) : (
+        <div className="space-y-3">
+          <img
+            src={character.imageUrl}
+            alt={character.name}
+            className="w-full h-40 object-cover rounded-lg"
+          />
+          <input
+            type="text"
+            placeholder="캐릭터 이름"
+            value={character.name}
+            onChange={(e) => onUpdate({ ...character, name: e.target.value })}
+            className="w-full bg-white/5 border border-white/10 rounded px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+          />
+          <textarea
+            placeholder="캐릭터 설명 (선택)"
+            value={character.description}
+            onChange={(e) => onUpdate({ ...character, description: e.target.value })}
+            className="w-full bg-white/5 border border-white/10 rounded px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none resize-none"
+            rows={2}
+          />
         </div>
       )}
-      <div className="flex justify-between items-start">
-        <h3 className="text-lg font-bold text-white pr-8 print:text-black">{strategy.title}</h3>
-        <div className="flex flex-col items-end space-y-2 print:hidden">
-          <span className={`${tagColor} text-[10px] px-2 py-0.5 rounded font-bold uppercase text-white`}>
-            {isNiche ? '니치' : '대중적'}
-          </span>
-          {isNiche && onRefresh && (
-            <button 
-              onClick={(e) => { e.stopPropagation(); onRefresh(); }}
-              className="text-[10px] bg-white/5 hover:bg-white/10 text-gray-400 px-2 py-1 rounded border border-white/10 flex items-center space-x-1 transition-all active:scale-95"
-              title="니치 전략 새로고침"
+    </div>
+  );
+};
+
+// 페이지 편집 컴포넌트
+const PageEditor: React.FC<{
+  page: Page;
+  characters: Character[];
+  styleProfile: any;
+  onUpdate: (page: Page) => void;
+  onGenerate: (pageNumber: number) => void;
+  generating: boolean;
+}> = ({ page, characters, styleProfile, onUpdate, onGenerate, generating }) => {
+  const availableCharacters = characters.filter(c => !c.isEmpty);
+
+  const toggleCharacter = (charId: string) => {
+    const isSelected = page.selectedCharacterIds.includes(charId);
+    const newIds = isSelected
+      ? page.selectedCharacterIds.filter(id => id !== charId)
+      : [...page.selectedCharacterIds, charId];
+    onUpdate({ ...page, selectedCharacterIds: newIds });
+  };
+
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-xl p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-bold text-white">페이지 {page.pageNumber}</h3>
+        <button
+          onClick={() => onGenerate(page.pageNumber)}
+          disabled={!page.scenario || !styleProfile || generating}
+          className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold px-4 py-2 rounded-lg transition-all"
+        >
+          {generating ? (
+            <>
+              <i className="fa-solid fa-spinner animate-spin mr-2"></i>
+              생성 중...
+            </>
+          ) : (
+            <>
+              <i className="fa-solid fa-wand-magic-sparkles mr-2"></i>
+              이미지 생성
+            </>
+          )}
+        </button>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-400 mb-2">시나리오</label>
+        <textarea
+          value={page.scenario}
+          onChange={(e) => onUpdate({ ...page, scenario: e.target.value })}
+          placeholder="이 페이지의 장면을 설명해주세요..."
+          className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none resize-none"
+          rows={4}
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-400 mb-2">등장 캐릭터</label>
+        <div className="flex flex-wrap gap-2">
+          {availableCharacters.map(char => (
+            <button
+              key={char.id}
+              onClick={() => toggleCharacter(char.id)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                page.selectedCharacterIds.includes(char.id)
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-white/5 text-gray-400 hover:bg-white/10'
+              }`}
             >
-              <i className="fa-solid fa-arrows-rotate"></i>
-              <span>새로고침</span>
+              {char.name}
             </button>
+          ))}
+          {availableCharacters.length === 0 && (
+            <span className="text-sm text-gray-500">등록된 캐릭터가 없습니다</span>
           )}
         </div>
-        <div className="hidden print:block text-[10px] font-bold border px-2 py-0.5 rounded uppercase">
-          {isNiche ? 'NICHE' : 'GENERAL'}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-400 mb-2">과장도</label>
+        <div className="flex gap-3">
+          {([40, 60, 80] as ExaggerationLevel[]).map(level => (
+            <button
+              key={level}
+              onClick={() => onUpdate({ ...page, exaggerationLevel: level })}
+              className={`flex-1 py-3 rounded-lg text-sm font-bold transition-all ${
+                page.exaggerationLevel === level
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-white/5 text-gray-400 hover:bg-white/10'
+              }`}
+            >
+              {level}%
+              <div className="text-xs font-normal mt-1">
+                {level === 40 ? '자연스러움' : level === 60 ? '동화적' : '극적'}
+              </div>
+            </button>
+          ))}
         </div>
       </div>
-      <p className="text-sm text-gray-300 line-clamp-3 leading-relaxed print:text-gray-700 print:line-clamp-none">{strategy.description}</p>
-      
-      <div className="flex items-center space-x-4 text-xs">
-        <div className="flex flex-col">
-          <span className="text-gray-500 print:text-gray-500">경쟁도</span>
-          <span className={strategy.competition === '높음' || strategy.competition === 'High' ? 'text-red-400 font-bold' : 'text-green-400 font-bold'}>{strategy.competition}</span>
-        </div>
-        <div className="flex flex-col">
-          <span className="text-gray-500 print:text-gray-500">난이도</span>
-          <div className="flex space-x-0.5 mt-1">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className={`w-2 h-2 rounded-full ${i < strategy.difficulty ? 'bg-indigo-500' : 'bg-gray-700 print:bg-gray-200'}`}></div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-400 mb-2">
+          사용자 프롬프트 (선택)
+        </label>
+        <input
+          type="text"
+          value={page.userPrompt}
+          onChange={(e) => onUpdate({ ...page, userPrompt: e.target.value })}
+          placeholder="추가 지시사항을 입력하세요..."
+          className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+        />
+      </div>
+
+      {page.generatedImages.length > 0 && (
+        <div>
+          <label className="block text-sm font-medium text-gray-400 mb-3">생성된 이미지</label>
+          <div className="grid grid-cols-2 gap-4">
+            {page.generatedImages.map(img => (
+              <div key={img.id} className="space-y-2">
+                <img
+                  src={img.imageUrl}
+                  alt={`Page ${page.pageNumber} - ${img.promptType}`}
+                  className="w-full rounded-lg border border-white/10"
+                />
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">
+                    프롬프트 {img.promptType} | {img.exaggerationLevel}%
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        const link = document.createElement('a');
+                        link.href = img.imageUrl;
+                        link.download = `page-${page.pageNumber}-${img.promptType}.png`;
+                        link.click();
+                      }}
+                      className="text-xs text-blue-400 hover:text-blue-300"
+                    >
+                      <i className="fa-solid fa-download"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
         </div>
-        <div className="flex flex-col">
-          <span className="text-gray-500 print:text-gray-500">예상 CPM</span>
-          <span className="text-indigo-300 font-bold print:text-indigo-700">{strategy.estimatedCpm}</span>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <div className="text-xs font-semibold text-gray-400 uppercase tracking-tight flex justify-between border-b border-white/10 pb-1 print:border-gray-200 print:text-gray-800">
-          <span>콘텐츠 아이디어 (5)</span>
-        </div>
-        <ul className="space-y-1.5">
-          {strategy.ideas.slice(0, 5).map((idea, idx) => (
-            <li key={idx} className="text-xs text-gray-400 flex items-start space-x-2 print:text-gray-700">
-              <span className="text-indigo-500 mt-0.5">•</span>
-              <span>{idea}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      )}
     </div>
   );
 };
 
 export default function App() {
-  const [topic, setTopic] = useState('교육');
-  const [region, setRegion] = useState('South Korea');
-  const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<AnalysisData | null>(null);
+  const [project, setProject] = useState<Project>(createEmptyProject());
+  const [currentView, setCurrentView] = useState<AppView>('setup');
+  const [currentPageIndex, setCurrentPageIndex] = useState(0);
+  const [generating, setGenerating] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [copying, setCopying] = useState(false);
-  const [refreshingNicheId, setRefreshingNicheId] = useState<number | null>(null);
+  const [analyzingStyle, setAnalyzingStyle] = useState(false);
 
-  const addLog = useCallback((message: string, agent: string = '시스템 AI', type: LogEntry['type'] = 'info') => {
+  const addLog = useCallback((message: string, type: LogEntry['type'] = 'info') => {
     setLogs(prev => [
-      { id: Math.random().toString(36), agent, message, timestamp: new Date(), type },
-      ...prev.slice(0, 19)
+      { id: crypto.randomUUID(), message, timestamp: new Date(), type },
+      ...prev.slice(0, 49),
     ]);
   }, []);
 
-  const handleAnalyze = async () => {
-    if (!topic) return;
-    setLoading(true);
-    setData(null);
-    setLogs([]);
-    addLog(`분석 엔진 가동: ${topic} (${region})...`, '총괄 에이전트');
-    
+  const updateCharacter = (index: number, char: Character) => {
+    const newChars = [...project.characters];
+    newChars[index] = char;
+    setProject({ ...project, characters: newChars, updatedAt: new Date() });
+  };
+
+  const handleAnalyzeStyle = async () => {
+    const filledCharacters = project.characters.filter(c => !c.isEmpty);
+    if (filledCharacters.length === 0) {
+      addLog('최소 1개의 캐릭터를 등록해주세요', 'error');
+      return;
+    }
+
+    setAnalyzingStyle(true);
+    addLog('캐릭터 이미지에서 스타일을 분석하고 있습니다...', 'info');
+
     try {
-      addLog('시장 트렌드 및 CPM 데이터 분석 중...', 'CPM 분석가');
-      addLog('경쟁 채널 환경 스캔 및 니치 탐색 중...', '경쟁 분석가');
-      
-      const result = await analyzeTopic(topic, region);
-      
-      addLog('분석 보고서 생성 완료.', '전략 전문가', 'success');
-      setData(result);
+      const imageUrls = filledCharacters.map(c => c.imageUrl);
+      const styleProfile = await analyzeStyle(imageUrls);
+      setProject({ ...project, styleProfile, updatedAt: new Date() });
+      addLog('스타일 분석 완료! 이제 페이지를 편집할 수 있습니다.', 'success');
+      setCurrentView('pages');
     } catch (error) {
-      addLog('데이터를 불러오는 중 오류가 발생했습니다.', '시스템', 'warning');
+      addLog('스타일 분석 중 오류가 발생했습니다', 'error');
       console.error(error);
     } finally {
-      setLoading(false);
+      setAnalyzingStyle(false);
     }
   };
 
-  const handleRefreshNiche = async (index: number) => {
-    if (!data || !topic) return;
-    setRefreshingNicheId(index);
-    addLog(`니치 전략 #${index + 1} 새로고침 요청됨...`, '니치 전문가');
-    
+  const updatePage = (pageNumber: number, page: Page) => {
+    const newPages = [...project.pages];
+    newPages[pageNumber - 1] = page;
+    setProject({ ...project, pages: newPages, updatedAt: new Date() });
+  };
+
+  const handleGenerateImages = async (pageNumber: number) => {
+    const page = project.pages[pageNumber - 1];
+    if (!project.styleProfile || !page.scenario) return;
+
+    setGenerating(true);
+    addLog(`페이지 ${pageNumber} 이미지 생성 시작...`, 'info');
+
     try {
-      const newStrategy = await refreshNicheStrategy(topic, region);
-      const newData = { ...data };
-      newData.strategies[index] = newStrategy;
-      setData(newData);
-      addLog(`니치 전략 #${index + 1}이 새롭게 업데이트되었습니다.`, '니치 전문가', 'success');
+      const result = await generateImagesAB(
+        project.styleProfile,
+        project.characters,
+        page.selectedCharacterIds,
+        page.scenario,
+        page.exaggerationLevel,
+        page.userPrompt
+      );
+
+      const newImages: GeneratedImage[] = [
+        {
+          id: crypto.randomUUID(),
+          imageUrl: result.imageUrlA,
+          promptType: 'A' as PromptType,
+          exaggerationLevel: page.exaggerationLevel,
+          fullPrompt: result.promptA,
+          createdAt: new Date(),
+        },
+        {
+          id: crypto.randomUUID(),
+          imageUrl: result.imageUrlB,
+          promptType: 'B' as PromptType,
+          exaggerationLevel: page.exaggerationLevel,
+          fullPrompt: result.promptB,
+          createdAt: new Date(),
+        },
+      ];
+
+      updatePage(pageNumber, { ...page, generatedImages: newImages });
+      addLog(`페이지 ${pageNumber} 이미지 생성 완료!`, 'success');
     } catch (error) {
-      addLog('니치 전략 업데이트 중 문제가 발생했습니다.', '시스템', 'warning');
+      addLog(`페이지 ${pageNumber} 이미지 생성 실패`, 'error');
+      console.error(error);
     } finally {
-      setRefreshingNicheId(null);
+      setGenerating(false);
     }
   };
 
-  const copyJson = () => {
-    if (!data) return;
-    setCopying(true);
-    navigator.clipboard.writeText(JSON.stringify(data, null, 2));
-    addLog('데이터를 JSON 형식으로 클립보드에 복사했습니다.', '시스템', 'success');
-    setTimeout(() => setCopying(false), 2000);
+  const renderSetupView = () => (
+    <div className="max-w-7xl mx-auto space-y-8">
+      <div className="text-center space-y-4">
+        <h1 className="text-4xl font-bold text-white">
+          <span className="text-purple-400">FairyPage</span> Studio
+        </h1>
+        <p className="text-gray-400">캐릭터와 스타일을 고정하고 30페이지 동화를 만들어보세요</p>
+      </div>
+
+      <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+        <input
+          type="text"
+          value={project.name}
+          onChange={(e) => setProject({ ...project, name: e.target.value })}
+          className="w-full bg-transparent border-none text-2xl font-bold text-white placeholder-gray-500 focus:outline-none"
+          placeholder="프로젝트 이름"
+        />
+      </div>
+
+      <div>
+        <h2 className="text-xl font-bold text-white mb-4">캐릭터 등록 (최대 5개)</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {project.characters.map((char, idx) => (
+            <CharacterSlot
+              key={char.id}
+              character={char}
+              onUpdate={(c) => updateCharacter(idx, c)}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="flex justify-center">
+        <button
+          onClick={handleAnalyzeStyle}
+          disabled={analyzingStyle || project.characters.filter(c => !c.isEmpty).length === 0}
+          className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold px-8 py-4 rounded-xl transition-all text-lg"
+        >
+          {analyzingStyle ? (
+            <>
+              <i className="fa-solid fa-spinner animate-spin mr-2"></i>
+              스타일 분석 중...
+            </>
+          ) : (
+            <>
+              <i className="fa-solid fa-check mr-2"></i>
+              스타일 고정 및 시작
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderPagesView = () => {
+    const currentPage = project.pages[currentPageIndex];
+    
+    return (
+      <div className="flex h-full">
+        {/* 페이지 리스트 */}
+        <div className="w-64 border-r border-white/10 p-4 overflow-y-auto">
+          <h3 className="text-sm font-bold text-gray-400 mb-4 uppercase">페이지 목록</h3>
+          <div className="space-y-2">
+            {project.pages.map((page, idx) => (
+              <button
+                key={page.pageNumber}
+                onClick={() => setCurrentPageIndex(idx)}
+                className={`w-full text-left px-4 py-3 rounded-lg transition-all ${
+                  currentPageIndex === idx
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold">페이지 {page.pageNumber}</span>
+                  {page.generatedImages.length > 0 && (
+                    <i className="fa-solid fa-check-circle text-green-500"></i>
+                  )}
+                </div>
+                {page.scenario && (
+                  <div className="text-xs mt-1 truncate opacity-70">
+                    {page.scenario.substring(0, 30)}...
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 페이지 편집 */}
+        <div className="flex-1 p-8 overflow-y-auto">
+          <PageEditor
+            page={currentPage}
+            characters={project.characters}
+            styleProfile={project.styleProfile}
+            onUpdate={(p) => updatePage(currentPage.pageNumber, p)}
+            onGenerate={handleGenerateImages}
+            generating={generating}
+          />
+        </div>
+      </div>
+    );
   };
 
-  const exportPdf = () => {
-    if (!data) return;
-    addLog('분석 결과 리포트 PDF 출력을 시작합니다.', '시스템');
-    // 실제 다운로드 느낌을 위해 약간의 딜레이 후 print 실행
-    setTimeout(() => {
-      window.print();
-    }, 500);
-  };
+  const renderPreviewView = () => (
+    <div className="max-w-6xl mx-auto space-y-8 p-8">
+      <div className="text-center">
+        <h2 className="text-3xl font-bold text-white mb-2">{project.name}</h2>
+        <p className="text-gray-400">전체 미리보기</p>
+      </div>
 
-  useEffect(() => {
-    handleAnalyze();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        {project.pages.map(page => (
+          <div key={page.pageNumber} className="space-y-2">
+            <div className="aspect-[4/3] bg-white/5 border border-white/10 rounded-lg overflow-hidden">
+              {page.generatedImages.length > 0 ? (
+                <img
+                  src={page.generatedImages[0].imageUrl}
+                  alt={`Page ${page.pageNumber}`}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-600">
+                  <i className="fa-solid fa-image text-4xl"></i>
+                </div>
+              )}
+            </div>
+            <div className="text-center text-sm text-gray-400">
+              페이지 {page.pageNumber}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden print:h-auto print:overflow-visible print:bg-white print:text-black">
-      {/* Header */}
-      <header className="h-16 flex items-center justify-between px-6 border-b border-white/5 bg-[#0f0a1e] z-10 shrink-0 print:hidden">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 bg-red-600 rounded flex items-center justify-center shadow-lg shadow-red-500/20">
-            <i className="fa-brands fa-youtube text-white text-lg"></i>
-          </div>
-          <h1 className="text-lg font-bold tracking-tight hidden sm:block">
-            유튜브 토픽 <span className="text-red-500 underline decoration-red-500/30">인사이트 AI</span>
-          </h1>
+    <div className="flex flex-col h-screen bg-gradient-to-br from-[#0a0015] via-[#1a0a2e] to-[#0a0015] text-white">
+      {/* 헤더 */}
+      <header className="h-16 border-b border-white/10 px-6 flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <div className="text-2xl">📚</div>
+          <h1 className="text-lg font-bold">FairyPage Studio</h1>
         </div>
 
-        <div className="flex-1 max-w-xl mx-8 flex items-center bg-white/5 border border-white/10 rounded-full px-4 py-1.5 focus-within:border-indigo-500/50 transition-colors">
-          <i className="fa-solid fa-search text-gray-500 mr-3"></i>
-          <input 
-            type="text" 
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
-            placeholder="주제를 입력하세요..."
-            className="bg-transparent border-none outline-none w-full text-sm text-gray-200 placeholder-gray-500"
-          />
-          <select 
-            className="bg-transparent border-none outline-none text-xs text-indigo-400 font-bold cursor-pointer ml-2 hover:text-indigo-300"
-            value={region}
-            onChange={(e) => setRegion(e.target.value)}
-          >
-            <option value="South Korea" className="bg-[#1a152e]">한국 (KR)</option>
-            <option value="United States" className="bg-[#1a152e]">미국 (US)</option>
-            <option value="Japan" className="bg-[#1a152e]">일본 (JP)</option>
-            <option value="Global" className="bg-[#1a152e]">글로벌 (Global)</option>
-          </select>
+        <div className="flex items-center space-x-4">
+          {currentView !== 'setup' && (
+            <>
+              <button
+                onClick={() => setCurrentView('pages')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  currentView === 'pages'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                }`}
+              >
+                <i className="fa-solid fa-book-open mr-2"></i>
+                페이지 편집
+              </button>
+              <button
+                onClick={() => setCurrentView('preview')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  currentView === 'preview'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                }`}
+              >
+                <i className="fa-solid fa-eye mr-2"></i>
+                전체 미리보기
+              </button>
+            </>
+          )}
         </div>
-
-        <button 
-          onClick={handleAnalyze}
-          disabled={loading}
-          className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold px-6 py-2.5 rounded-full shadow-lg shadow-indigo-600/20 transition-all flex items-center space-x-2 active:scale-95"
-        >
-          {loading ? <i className="fa-solid fa-spinner animate-spin"></i> : <i className="fa-solid fa-bolt"></i>}
-          <span>분석 실행</span>
-        </button>
       </header>
 
-      {/* Main Layout */}
-      <div className="flex flex-1 overflow-hidden print:block print:overflow-visible">
-        {/* Sidebar Left */}
-        <aside className="w-16 border-r border-white/5 flex flex-col items-center py-6 space-y-6 shrink-0 bg-[#0f0a1e] print:hidden">
-          {[
-            { icon: 'fa-solid fa-chart-line', label: '시장 트렌드' },
-            { icon: 'fa-solid fa-hand-holding-dollar', label: '수익성 분석' },
-            { icon: 'fa-solid fa-users', label: '경쟁 채널' },
-            { icon: 'fa-solid fa-bullseye', label: '니치 발굴' },
-            { icon: 'fa-solid fa-lightbulb', label: '창의적 아이디어' }
-          ].map((item, i) => (
-            <div key={i} className="group relative">
-              <button className="w-10 h-10 rounded-lg flex items-center justify-center text-gray-500 hover:bg-indigo-600/10 hover:text-indigo-400 transition-all">
-                <i className={item.icon}></i>
-              </button>
-              <div className="absolute left-14 top-1/2 -translate-y-1/2 px-2 py-1 bg-indigo-600 text-[10px] text-white rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 shadow-xl">
-                {item.label}
-              </div>
-            </div>
-          ))}
-        </aside>
-
-        {/* Dashboard Content */}
-        <main className="flex-1 overflow-y-auto p-8 space-y-8 print:p-0 print:overflow-visible">
-          {loading && !data && (
-            <div className="h-full flex flex-col items-center justify-center space-y-6 opacity-80">
-              <div className="relative">
-                <div className="w-20 h-20 border-4 border-indigo-500/10 border-t-indigo-500 rounded-full animate-spin shadow-2xl shadow-indigo-500/20"></div>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <i className="fa-solid fa-robot text-indigo-400 text-2xl"></i>
-                </div>
-              </div>
-              <div className="text-center space-y-1">
-                <p className="text-indigo-400 font-bold text-lg animate-pulse">데이터 마이닝 및 전략 수립 중</p>
-                <p className="text-gray-500 text-sm">최신 시장 트렌드와 수익성을 분석하고 있습니다...</p>
-              </div>
-            </div>
-          )}
-
-          {data && (
-            <div className="max-w-6xl mx-auto space-y-10">
-              {/* Analysis Header */}
-              <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-white/5 pb-6 print:border-gray-300">
-                <div className="space-y-3">
-                  <div className="flex items-center space-x-3">
-                    <img 
-                      src={`https://flagcdn.com/w40/${data.region.toLowerCase().includes('korea') ? 'kr' : data.region.toLowerCase().includes('united states') ? 'us' : data.region.toLowerCase().includes('japan') ? 'jp' : 'un'}.png`} 
-                      className="w-8 h-6 object-cover rounded shadow-lg"
-                      alt="region"
-                    />
-                    <h2 className="text-3xl font-extrabold text-white print:text-black">
-                      <span className="text-indigo-400 print:text-indigo-600">{topic}</span> 분석 리포트
-                    </h2>
-                  </div>
-                  <div className="flex items-center space-x-4">
-                    <span className="bg-indigo-500/10 text-indigo-400 text-xs px-3 py-1 rounded-full font-bold border border-indigo-500/20 print:border-gray-300 print:text-black">
-                      {data.category}
-                    </span>
-                    <span className="text-green-500 font-bold flex items-center space-x-1.5">
-                      <i className="fa-solid fa-dollar-sign"></i>
-                      <span>CPM 범위: {data.cpmRange}</span>
-                    </span>
-                  </div>
-                </div>
-                
-                <div className="flex space-x-3 print:hidden">
-                  <button 
-                    onClick={copyJson}
-                    className="glass px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-white/10 transition-all flex items-center space-x-2 active:scale-95 border border-white/10"
-                  >
-                    <i className={`fa-solid ${copying ? 'fa-check text-green-500' : 'fa-code text-indigo-400'}`}></i>
-                    <span>{copying ? '복사 완료' : 'JSON 데이터 복사'}</span>
-                  </button>
-                  <button 
-                    onClick={exportPdf}
-                    className="bg-white/5 hover:bg-red-600/10 px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 active:scale-95 border border-white/10 hover:border-red-500/30 text-gray-300 hover:text-red-400"
-                  >
-                    <i className="fa-solid fa-file-pdf"></i>
-                    <span>PDF 리포트 저장</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Stats Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <StatCard label="유사 채널 수" value={data.stats.relatedChannels} icon="fa-solid fa-users-viewfinder" />
-                <StatCard label="최근 게시 비디오" value={data.stats.relatedVideos} icon="fa-solid fa-video" />
-                <StatCard label="채널 평균 구독자" value={data.stats.avgSubscribers} icon="fa-solid fa-user-check" />
-                <StatCard label="시장 경쟁 강도" value={data.stats.competitionIntensity} accent={data.stats.competitionIntensity === '높음' || data.stats.competitionIntensity === 'High'} icon="fa-solid fa-fire-flame-curved" />
-              </div>
-
-              {/* Top Channels */}
-              <div className="glass rounded-2xl p-6 border border-white/5 print:bg-white print:text-black print:border-gray-200">
-                <div className="flex items-center space-x-2 mb-6 text-xs font-bold text-amber-500 uppercase tracking-widest border-l-2 border-amber-500 pl-3">
-                  <i className="fa-solid fa-trophy"></i>
-                  <span>주요 마켓 리더 및 경쟁자</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {data.topChannels.map((channel, i) => (
-                    <a 
-                      key={i} 
-                      href={channel.url} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="flex items-center space-x-4 bg-white/5 border border-white/5 hover:border-indigo-500/50 hover:bg-indigo-500/5 p-4 rounded-xl transition-all group print:border-gray-200 print:bg-gray-50"
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center text-sm font-bold text-indigo-400 group-hover:bg-indigo-500 group-hover:text-white transition-all shadow-inner">
-                        {channel.name[0]}
-                      </div>
-                      <div className="flex flex-col flex-1 truncate">
-                        <span className="text-sm font-bold text-white print:text-black truncate">{channel.name}</span>
-                        <span className="text-xs text-gray-500 font-medium">{channel.subscribers} 구독자</span>
-                      </div>
-                      <i className="fa-solid fa-arrow-up-right-from-square text-[10px] text-gray-700 group-hover:text-indigo-400 transition-colors print:hidden"></i>
-                    </a>
-                  ))}
-                </div>
-              </div>
-
-              {/* Insights */}
-              <div className="bg-gradient-to-br from-indigo-900/20 to-transparent border border-indigo-500/10 rounded-2xl p-8 relative overflow-hidden print:bg-white print:text-black print:border-gray-200 print:shadow-none">
-                <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none">
-                  <i className="fa-solid fa-brain text-8xl text-indigo-400"></i>
-                </div>
-                <h3 className="text-sm font-bold text-indigo-400 uppercase mb-6 flex items-center space-x-2 border-b border-indigo-500/10 pb-2">
-                  <i className="fa-solid fa-bolt"></i>
-                  <span>AI 데이터 기반 전략적 인사이트</span>
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {data.insights.map((insight, i) => (
-                    <div key={i} className="flex items-start space-x-4 text-sm text-gray-300 print:text-black p-3 bg-white/5 rounded-lg border border-white/5 print:bg-transparent print:border-none print:p-0">
-                      <span className="text-indigo-500 font-bold bg-indigo-500/10 w-6 h-6 flex items-center justify-center rounded text-[10px] shrink-0">{i+1}</span>
-                      <p className="leading-relaxed">{insight}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Strategies Section */}
-              <div className="space-y-8 pb-12">
-                <div className="flex items-center justify-between border-b border-white/5 pb-4">
-                  <h3 className="text-xl font-bold text-white flex items-center space-x-3 print:text-black">
-                    <i className="fa-solid fa-chess-knight text-indigo-500"></i>
-                    <span>맞춤형 콘텐츠 로드맵 제안</span>
-                  </h3>
-                  <div className="flex items-center space-x-6 text-[10px] font-bold uppercase tracking-wider print:hidden">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 bg-red-600 rounded shadow-sm"></div>
-                      <span className="text-gray-400">대중적 (수요 위주)</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 bg-green-600 rounded shadow-sm"></div>
-                      <span className="text-gray-400">니치 (블루오션)</span>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  {data.strategies.map((strategy, i) => (
-                    <StrategyCard 
-                      key={i} 
-                      strategy={strategy} 
-                      onRefresh={strategy.type === 'niche' ? () => handleRefreshNiche(i) : undefined}
-                      refreshing={refreshingNicheId === i}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {!data && !loading && (
-            <div className="h-full flex flex-col items-center justify-center text-center space-y-8 py-20">
-              <div className="relative">
-                <div className="w-32 h-32 bg-indigo-600/5 rounded-full flex items-center justify-center animate-pulse">
-                  <i className="fa-solid fa-magnifying-glass-chart text-5xl text-indigo-500/50"></i>
-                </div>
-                <div className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">READY</div>
-              </div>
-              <div className="max-w-md space-y-3">
-                <h2 className="text-3xl font-bold text-white">데이터 분석을 시작하세요</h2>
-                <p className="text-gray-400 leading-relaxed">
-                  유튜브에서 공략하고 싶은 <span className="text-indigo-400 font-bold">주제(니치)</span>를 입력하세요.<br/>
-                  AI가 실시간으로 트렌드와 수익성을 분석해 드립니다.
-                </p>
-              </div>
-              <div className="flex flex-wrap justify-center gap-3">
-                {['캠핑', '코딩 교육', '희귀 식물', '빈티지 게임'].map(tag => (
-                  <button 
-                    key={tag}
-                    onClick={() => { setTopic(tag); handleAnalyze(); }}
-                    className="px-4 py-2 bg-white/5 border border-white/10 rounded-full text-xs text-gray-400 hover:text-white hover:border-indigo-500/50 transition-all active:scale-95"
-                  >
-                    #{tag}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </main>
-
-        {/* Sidebar Right */}
-        <aside className="w-80 border-l border-white/5 flex flex-col shrink-0 bg-[#0f0a1e] print:hidden">
-          <div className="p-4 border-b border-white/5 flex items-center justify-between bg-white/2">
-            <h3 className="text-xs font-bold flex items-center space-x-2 text-gray-400">
-              <i className="fa-solid fa-terminal text-indigo-500"></i>
-              <span>AI AGENT ACTIVITY</span>
-            </h3>
-            <span className="bg-green-500/10 text-green-500 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase animate-pulse border border-green-500/20">LIVE</span>
+      {/* 메인 콘텐츠 */}
+      <main className="flex-1 overflow-hidden">
+        {currentView === 'setup' && (
+          <div className="h-full overflow-y-auto p-8">
+            {renderSetupView()}
           </div>
-          
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {logs.length === 0 && (
-              <div className="h-full flex flex-col items-center justify-center text-gray-700 space-y-2 opacity-50">
-                <i className="fa-solid fa-hourglass-start"></i>
-                <span className="text-xs italic">시스템 대기 중...</span>
-              </div>
-            )}
-            {logs.map((log) => (
-              <div key={log.id} className="flex flex-col space-y-1 animate-in fade-in slide-in-from-right-4 duration-300">
-                <div className="flex items-center justify-between">
-                  <span className={`text-[10px] font-bold uppercase tracking-widest ${
-                    log.type === 'success' ? 'text-green-500' : 
-                    log.type === 'warning' ? 'text-amber-500' : 'text-indigo-400'
-                  }`}>
-                    {log.agent}
-                  </span>
-                  <span className="text-[10px] text-gray-700 font-mono">
-                    {log.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                  </span>
-                </div>
-                <div className={`p-3 rounded-lg text-xs leading-relaxed border ${
-                  log.type === 'success' ? 'bg-green-500/5 border-green-500/20 text-green-100/80' : 
-                  log.type === 'warning' ? 'bg-amber-500/5 border-amber-500/20 text-amber-100/80' : 
-                  'bg-white/5 border-white/5 text-gray-300'
-                }`}>
-                  {log.message}
-                </div>
+        )}
+        {currentView === 'pages' && renderPagesView()}
+        {currentView === 'preview' && (
+          <div className="h-full overflow-y-auto">
+            {renderPreviewView()}
+          </div>
+        )}
+      </main>
+
+      {/* 로그 패널 */}
+      {logs.length > 0 && (
+        <div className="fixed bottom-4 right-4 w-96 max-h-64 bg-black/90 border border-white/20 rounded-xl p-4 overflow-y-auto shadow-2xl">
+          <h3 className="text-xs font-bold text-gray-400 mb-2 uppercase">활동 로그</h3>
+          <div className="space-y-2">
+            {logs.slice(0, 5).map(log => (
+              <div
+                key={log.id}
+                className={`text-xs p-2 rounded ${
+                  log.type === 'success'
+                    ? 'bg-green-500/10 text-green-400'
+                    : log.type === 'error'
+                    ? 'bg-red-500/10 text-red-400'
+                    : 'bg-white/5 text-gray-400'
+                }`}
+              >
+                {log.message}
               </div>
             ))}
           </div>
-
-          <div className="p-5 bg-white/2 border-t border-white/5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="flex -space-x-2">
-                  {[1, 2, 3].map(i => (
-                    <div key={i} className={`w-7 h-7 rounded-full border-2 border-[#0f0a1e] flex items-center justify-center text-[10px] font-bold shadow-lg ${i === 1 ? 'bg-indigo-600' : i === 2 ? 'bg-amber-600' : 'bg-emerald-600'}`}>
-                      <i className="fa-solid fa-robot"></i>
-                    </div>
-                  ))}
-                </div>
-                <div className="text-[10px] text-gray-500 font-bold tracking-tighter">
-                  3 AI AGENTS ONLINE
-                </div>
-              </div>
-              <div className="w-2 h-2 rounded-full bg-green-500 shadow-lg shadow-green-500/50 animate-pulse"></div>
-            </div>
-          </div>
-        </aside>
-      </div>
-
-      {/* Global CSS for Print */}
-      <style>{`
-        @media print {
-          body { background: white !important; color: black !important; font-size: 10pt; }
-          .glass { background: white !important; border: 1px solid #eee !important; box-shadow: none !important; }
-          .bg-indigo-950\\/20 { background: #f8fafc !important; border: 1px solid #e2e8f0 !important; }
-          .bg-white\\/5 { background: #f1f5f9 !important; border: 1px solid #e2e8f0 !important; }
-          button, .print\\:hidden, select, input { display: none !important; }
-          .print\\:block { display: block !important; }
-          .print\\:text-black { color: black !important; }
-          .print\\:border-gray-200 { border-color: #e5e7eb !important; }
-          .print\\:bg-white { background-color: white !important; }
-          header, aside { display: none !important; }
-          main { width: 100% !important; padding: 0 !important; margin: 0 !important; overflow: visible !important; }
-          .max-w-6xl { max-width: 100% !important; }
-          h2, h3 { color: black !important; }
-        }
-      `}</style>
+        </div>
+      )}
     </div>
   );
 }

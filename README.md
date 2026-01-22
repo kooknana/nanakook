@@ -1,20 +1,154 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 📚 FairyPage Studio
 
-# Run and deploy your AI Studio app
+동화 30페이지 삽화 생성 앱 - 캐릭터·스타일 완전 고정 / 페이지별 이미지 생성
 
-This contains everything you need to run your app locally.
+## 🎯 프로젝트 개요
 
-View your app in AI Studio: https://ai.studio/apps/drive/1MRQQxOu7isMJYURQ2KDimjdVCrfW1Wbm
+**FairyPage Studio**는 고정된 캐릭터(최대 5명)와 동일한 그림 스타일을 유지한 상태에서 1~30페이지의 동화 시나리오를 직접 입력하고, 각 페이지마다 표정·행동 중심의 삽화를 생성·재생성할 수 있는 웹 기반 앱입니다.
 
-## Run Locally
+## ✨ 핵심 기능
 
-**Prerequisites:**  Node.js
+### 1. 캐릭터 슬롯 시스템
+- 최대 5개의 캐릭터 등록
+- 캐릭터별 이름, 이미지, 설명 관리
+- [없음] 옵션으로 유연한 슬롯 관리
 
+### 2. 스타일 고정
+- 캐릭터 이미지에서 자동 스타일 분석
+- 프로젝트 전체에 일관된 스타일 적용
+- 얼굴, 헤어, 의상, 체형 고정
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### 3. 페이지 편집 (1-30)
+- 30페이지 고정 구조
+- 페이지별 시나리오 입력
+- 등장 캐릭터 선택
+- 과장도 조절 (40% / 60% / 80%)
+- 선택적 사용자 프롬프트
+
+### 4. 프롬프트 A/B 생성
+- 동일 장면의 2가지 구도 자동 생성
+- A: 미디엄 샷, 중앙 배치, 균형잡힌 프레임
+- B: 와이드 샷, 다이나믹 앵글, 환경 맥락
+
+### 5. 이미지 관리
+- 페이지별 이미지 생성
+- 개별 이미지 다운로드
+- 재생성 기능
+- 전체 미리보기
+
+## 🚀 시작하기
+
+### 사전 요구사항
+- Node.js (v16 이상)
+
+### 설치 및 실행
+
+```bash
+# 의존성 설치
+npm install
+
+# 개발 서버 실행
+npm run dev
+
+# 프로덕션 빌드
+npm run build
+
+# 빌드 미리보기
+npm run preview
+```
+
+## 🎨 사용 방법
+
+### 1단계: 프로젝트 생성
+1. 프로젝트 이름 입력
+2. 캐릭터 슬롯에 이미지 업로드 (최대 5개)
+3. 캐릭터 이름 및 설명 입력
+4. "스타일 고정 및 시작" 버튼 클릭
+
+### 2단계: 페이지 편집
+1. 좌측 페이지 목록에서 원하는 페이지 선택
+2. 시나리오 텍스트 입력
+3. 등장할 캐릭터 선택
+4. 과장도 선택 (40% / 60% / 80%)
+5. 필요시 추가 프롬프트 입력
+6. "이미지 생성" 버튼 클릭
+
+### 3단계: 결과 확인 및 관리
+- 생성된 프롬프트 A/B 이미지 확인
+- 마음에 들지 않으면 재생성
+- 이미지 다운로드
+- "전체 미리보기"에서 모든 페이지 확인
+
+## 🏗️ 기술 스택
+
+- **Frontend**: React 19, TypeScript
+- **Build Tool**: Vite
+- **Styling**: Tailwind CSS (CDN)
+- **Icons**: Font Awesome
+- **AI Image Generation**: ideogram/V_3 모델 (예정)
+
+## 📁 프로젝트 구조
+
+```
+/home/user/webapp/
+├── App.tsx                          # 메인 애플리케이션 컴포넌트
+├── types.ts                         # TypeScript 타입 정의
+├── services/
+│   └── imageGenerationService.ts    # 이미지 생성 서비스
+├── index.tsx                        # 앱 엔트리 포인트
+├── index.html                       # HTML 템플릿
+└── package.json                     # 프로젝트 메타데이터
+```
+
+## 🎯 핵심 가치
+
+| 항목 | 설명 |
+|------|------|
+| **일관성** | 30페이지 내내 동일한 캐릭터·그림체 유지 |
+| **제어력** | 페이지별·이미지별 재생성 가능 |
+| **효율** | 같은 장면을 A/B 구도로 빠르게 비교 |
+| **신뢰** | "다시 눌러도 비슷한 결과" 보장 |
+
+## 🔧 과장도 시스템
+
+- **40%**: 자연스러운 표정과 감정 (Natural and subtle emotions)
+- **60%**: 동화적 리액션 (Expressive fairy-tale style reactions)
+- **80%**: 극적이고 코믹한 표현 (Highly dramatic and comedic expressions)
+
+## 📝 프롬프트 시스템
+
+모든 이미지 생성은 다음 블록 순서로 프롬프트가 조립됩니다:
+
+1. **스타일 고정**: 분석된 스타일 프로필 적용
+2. **캐릭터 고정**: 선택된 캐릭터의 정체성 유지
+3. **장면 요약**: 시나리오 또는 사용자 프롬프트
+4. **표정·행동 강조**: 감정 표현에 집중
+5. **과장도**: 40/60/80% 적용
+6. **구도**: A/B 타입 적용
+
+## 🎯 타깃 사용자
+
+- 동화 작가
+- 부모 (자녀용 동화 제작)
+- 유아·초등 교육 콘텐츠 제작자
+- 캐릭터 IP 기반 스토리 크리에이터
+
+## 🚧 향후 계획 (MVP 이후)
+
+- [ ] 협업 편집 기능
+- [ ] 음성 내레이션 추가
+- [ ] AI 자동 시나리오 생성
+- [ ] 프로젝트 내보내기/가져오기
+- [ ] 템플릿 라이브러리
+
+## 📄 라이선스
+
+This project is private and proprietary.
+
+## 🙋‍♂️ 문의
+
+프로젝트 관련 문의사항이 있으시면 이슈를 등록해주세요.
+
+---
+
+**"스타일과 캐릭터는 절대 고정하고, 페이지별 장면과 감정만 통제해 바꾸는 동화 삽화 생성 도구"**
