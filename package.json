@@ -1,8 +1,9 @@
 {
-  "name": "유튜브-토픽-인사이트-ai",
+  "name": "fairypage-studio",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "description": "동화 30페이지 삽화 생성 앱 - 캐릭터·스타일 완전 고정",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
